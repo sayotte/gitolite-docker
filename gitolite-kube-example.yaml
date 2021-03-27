@@ -1,0 +1,72 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: gitolite-server
+  labels:
+    app: gitolite-server
+spec:
+  selector:
+    app: gitolite-server
+  type: LoadBalancer
+  ports:
+  - port: 22
+    targetPort: 2222
+    protocol: TCP
+    name: sshd
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: gitolite
+spec:
+  selector:
+    matchLabels:
+      app: gitolite-server # has to match .spec.template.metadata.labels
+  serviceName: "gitolite-server"
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: gitolite-server # has to match .spec.selector.matchLabels
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 101
+        runAsNonRoot: true
+        fsGroup: 101
+        fsGroupChangePolicy: "OnRootMismatch"
+      terminationGracePeriodSeconds: 10
+      containers:
+      - name: gitolite
+        image: soyota/gitolite:0.3
+        ports:
+        - containerPort: 2222
+          protocol: TCP
+          name: sshd
+        volumeMounts:
+        - name: home
+          mountPath: /home
+        env:
+          - name: ADMIN_PUBKEY
+            value: "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBJ9qmllloQEfV/C+U2wi/1gYx3Oy9aVFzGFajXFyR+DYDgqyEWJlfQ58+kMy1JTamLu604LuIkyjwelv56hl47w= admin@adminhost"
+          - name: ADMIN_USERNAME
+            value: "admin"
+      tolerations:
+      - key: "node.kubernetes.io/unreachable"
+        operator: "Exists"
+        effect: "NoExecute"
+        tolerationSeconds: 15
+      - key: "node.kubernetes.io/not-ready"
+        operator: "Exists"
+        effect: "NoExecute"
+        tolerationSeconds: 15
+  volumeClaimTemplates:
+  - metadata:
+      name: home
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: longhorn
+      resources:
+        requests:
+          storage: 10Gi
+
